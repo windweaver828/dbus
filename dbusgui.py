@@ -2,12 +2,13 @@ import os, paramiko, pickle, wx, datetime
 PICKLEFILE = os.path.expanduser('~/.clients.p')
 Clients = pickle.load(file(PICKLEFILE, 'rb'))
 
-volUp = '/home/pi/bin/dbuscontrol volumeup'#os.path.expanduser('~/bin/dbuscontrol volumeup')
-volDown = '/home/pi/bin/dbuscontrol volumedown'#os.path.expanduser('~/bin/dbuscontrol volumedown')
-setPos = '/home/pi/bin/dbuscontrol setposition'#os.path.expanduser('~/bin/dbuscontrol setposition ')
-Seek = '/home/pi/bin/dbuscontrol seek'#os.path.expanduser('~/bin/dbuscontrol seek')
-Pause = '/home/pi/bin/dbuscontrol pause'#os.path.expanduser('~/bin/dbuscontrol pause')
-Status = ('/home/pi/bin/dbuscontrol status')
+volUp = '$HOME/bin/dbuscontrol volumeup'
+volDown = '$HOME/bin/dbuscontrol volumedown'
+setPos = '$HOME/bin/dbuscontrol setposition'
+Seek = '$HOME/bin/dbuscontrol seek'
+Pause = '$HOME/bin/dbuscontrol pause'
+Status = '$HOME/bin/dbuscontrol status'
+KillMovie = '$HOME/bin/killmovie'
 duration = str(300)
 position = str(150)
 
@@ -17,17 +18,18 @@ class dbusControl(wx.Frame):
         wx.Frame.__init__(self, parent, id, title, size=wx.Size(300,300), style = no_resize)
         panel = wx.Panel(self, -1, (50, 240))
         self.Bind(wx.EVT_CLOSE, self.onClose)
-        img = wx.EmptyImage(75,100)
-        self.imageCtrl = wx.StaticBitmap(panel, wx.ID_ANY, wx.BitmapFromImage(img), (110,85))
-        self.play = wx.Button(panel, -1, 'Play/Pause', pos=(200,95))
-        self.volup = wx.Button(panel, -1, 'Volume Up',  pos=(200,125))
-        self.voldown = wx.Button(panel, -1, 'Volume Down', pos=(200,155))
-        self.seekbut = wx.Button(panel, -1, 'Seek', pos=(200,185))
+        img = wx.EmptyImage(75,110)
+        self.imageCtrl = wx.StaticBitmap(panel, wx.ID_ANY, wx.BitmapFromImage(img), (110,115))
+        self.play = wx.Button(panel, -1, 'Play/Pause', pos=(200,110))
+        self.volup = wx.Button(panel, -1, 'Vol Up',  pos=(200,140))
+        self.voldown = wx.Button(panel, -1, 'Vol Down', pos=(200,170))
+        self.seekbut = wx.Button(panel, -1, 'Seek', pos=(200,200))
+        self.killmovie = wx.Button(panel, -1, 'Stop Movie', pos=(105, 240))
         clientlist=[]
         for client in Clients.keys ():
             clientlist.append(client)
-        self.clientbox = wx.ListBox(panel, -1, (22,85), (75,130), clientlist)
-        self.clienttext = wx.StaticText(panel, -1, 'Available Clients', (15,65))
+        self.clientbox = wx.ListBox(panel, -1, (22,115), (75,110), clientlist)
+        self.clienttext = wx.StaticText(panel, -1, 'Available Clients', (15,95))
 ##        self.sld = wx.Slider(panel, value=int(position), minValue=0, maxValue=int(duration), pos=(20, 200), size=(200, -1), style=wx.SL_HORIZONTAL)
 ##        self.sldval = wx.TextCtrl(panel, -1, duration, pos=(230, 200), size=(50,20))
 ##        self.sld.Bind(wx.EVT_SCROLL, self.OnSliderScroll)
@@ -35,10 +37,11 @@ class dbusControl(wx.Frame):
         self.volup.Bind(wx.EVT_BUTTON, self.volUp)
         self.voldown.Bind(wx.EVT_BUTTON, self.volDown)
         self.seekbut.Bind(wx.EVT_BUTTON, self.seek)
+        self.killmovie.Bind(wx.EVT_BUTTON, self.stopMovie)
         self.Bind(wx.EVT_LISTBOX, self.setClient)
         self.status=wx.StaticText(panel, -1, " ")
-        self.duration=wx.StaticText(panel, -1, " ", pos=(0,20))
-        self.position=wx.StaticText(panel, -1, " ", pos=(0,40))
+        self.duration=wx.StaticText(panel, -1, " ", pos=(0,40))
+        self.position=wx.StaticText(panel, -1, " ", pos=(0,60))
         font = wx.Font(10, wx.DECORATIVE, wx.BOLD, wx.NORMAL)
         self.status.SetFont(font)
         self.duration.SetFont(font)
@@ -50,14 +53,6 @@ class dbusControl(wx.Frame):
     def scaleBitmap(self, bitmap, width, height):
         image = bitmap.Scale(width, height, wx.IMAGE_QUALITY_HIGH)
         return image
-
-##    def OnSliderScroll(self, e):
-##        cli = self.clientbox.GetStringSelection()
-##        self.cli = Clients[cli]
-##        obj = e.GetEventObject()
-##        val= obj.GetValue()
-##        cmd = setPos+" "+str(val)
-##        sendcmd(setPos(self.cli, cmd))
     
     def setClient(self, event):
         cli = self.clientbox.GetStringSelection()
@@ -82,7 +77,7 @@ class dbusControl(wx.Frame):
             if file.endswith(".jpg"):
                 imagepath = path+"/"+file
         img = wx.Image(imagepath, wx.BITMAP_TYPE_JPEG)
-        image = self.scaleBitmap(img, 75, 100)
+        image = self.scaleBitmap(img, 75, 110)
         self.imageCtrl.SetBitmap(wx.BitmapFromImage(image))
         self.Refresh() 
 
@@ -100,12 +95,14 @@ class dbusControl(wx.Frame):
         
     def volDown(self, event):
         self.sendcmd(self.cli, volDown)
+
+    def stopMovie(self, event):
+        self.sendcmd(self.cli, KillMovie)
         
     def seek(self, event):
         self.sendcmd(self.cli, Seek+" 120")
 
     def statuscmd(self, cli, cmd=Status):
-        print cmd 
         self.client=paramiko.client.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.client.connect(cli['host'], port=cli['port'], username=cli['user'], password=cli['pass'])
