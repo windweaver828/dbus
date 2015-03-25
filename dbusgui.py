@@ -18,6 +18,9 @@ class dbusControl(wx.Frame):
         wx.Frame.__init__(self, parent, id, title, size=wx.Size(300,300), style = no_resize)
         panel = wx.Panel(self, -1, (50, 240))
         self.Bind(wx.EVT_CLOSE, self.onClose)
+        self.timer=wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.update, self.timer)
+        self.timer.Start(3000)
         img = wx.EmptyImage(75,110)
         self.imageCtrl = wx.StaticBitmap(panel, wx.ID_ANY, wx.BitmapFromImage(img), (110,115))
         self.play = wx.Button(panel, -1, 'Play/Pause', pos=(200,110))
@@ -30,26 +33,34 @@ class dbusControl(wx.Frame):
             clientlist.append(client)
         self.clientbox = wx.ListBox(panel, -1, (22,115), (75,110), clientlist)
         self.clienttext = wx.StaticText(panel, -1, 'Available Clients', (15,95))
-##        self.sld = wx.Slider(panel, value=int(position), minValue=0, maxValue=int(duration), pos=(20, 200), size=(200, -1), style=wx.SL_HORIZONTAL)
-##        self.sldval = wx.TextCtrl(panel, -1, duration, pos=(230, 200), size=(50,20))
-##        self.sld.Bind(wx.EVT_SCROLL, self.OnSliderScroll)
-        self.play.Bind(wx.EVT_BUTTON, self.pause)
+        self.play.Bind(wx.EVT_BUTTON, self .pause)
         self.volup.Bind(wx.EVT_BUTTON, self.volUp)
         self.voldown.Bind(wx.EVT_BUTTON, self.volDown)
         self.seekbut.Bind(wx.EVT_BUTTON, self.seek)
         self.killmovie.Bind(wx.EVT_BUTTON, self.stopMovie)
         self.Bind(wx.EVT_LISTBOX, self.setClient)
-        self.status=wx.StaticText(panel, -1, " ")
-        self.duration=wx.StaticText(panel, -1, " ", pos=(0,40))
-        self.position=wx.StaticText(panel, -1, " ", pos=(0,60))
+        self.status=wx.StaticText(panel, -1, "No Client Selected ")
+        self.duration=wx.StaticText(panel, -1, "No Duration Available ", pos=(0,40))
+        self.position=wx.StaticText(panel, -1, "Not Playing ", pos=(0,60))
         font = wx.Font(10, wx.DECORATIVE, wx.BOLD, wx.NORMAL)
         self.status.SetFont(font)
         self.duration.SetFont(font)
         self.position.SetFont(font)
         
     def onClose(self, event):
+        self.timer.Stop()
         self.Destroy()
-
+        
+    def update(self, event):
+        try:
+            cli = self.clientbox.GetStringSelection()
+            playing=str(self.sendcmd(self.cli, Clients[cli]['statuscmd']))
+            self.cli = Clients[cli]
+            duration, position = self.statuscmd(self.cli)
+            self.position.SetLabel("Currently at: "+str(position))
+        except Exception:
+            pass
+        
     def scaleBitmap(self, bitmap, width, height):
         image = bitmap.Scale(width, height, wx.IMAGE_QUALITY_HIGH)
         return image
@@ -67,7 +78,7 @@ class dbusControl(wx.Frame):
             imageFile = self.getImage(path)
         except: pass
         playing = playing.split("/")[-1].split(".")[0]
-        gap = int(20 - len(playing)/2)
+        gap = int((43*0.5) - (len(playing)*0.5))
         self.status.SetLabel(" "*gap+"Now Playing: "+playing)
         self.duration.SetLabel("Length of movie: "+str(duration))
         self.position.SetLabel("Currently at: "+str(position))
@@ -117,16 +128,12 @@ class dbusControl(wx.Frame):
         return duration, position
     
     def sendcmd(self, cli, cmd):
-        print cmd
         self.client=paramiko.client.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.client.connect(cli['host'], port=cli['port'], username=cli['user'], password=cli['pass'])
         self.Stdin, self.Stdout, self.Stderr = self.client.exec_command(cmd)
         ret = self.Stdout.readlines()        
         return ret
-    
-    def update(self, cli, cmd):
-        pass
 
 if __name__ == '__main__':
     app = wx.App()
