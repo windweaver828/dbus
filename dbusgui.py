@@ -1,4 +1,7 @@
+#!/usr/bin/python
+
 import os, paramiko, pickle, wx, datetime
+from subprocess import Popen, PIPE, STDOUT
 PICKLEFILE = os.path.expanduser('~/.clients.p')
 Clients = pickle.load(file(PICKLEFILE, 'rb'))
 
@@ -18,48 +21,60 @@ class dbusControl(wx.Frame):
         wx.Frame.__init__(self, parent, id, title, size=wx.Size(300,300), style = no_resize)
         panel = wx.Panel(self, -1, (50, 240))
         self.Bind(wx.EVT_CLOSE, self.onClose)
-        self.timer=wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.update, self.timer)
-        self.timer.Start(3000)
         img = wx.EmptyImage(75,110)
-        self.imageCtrl = wx.StaticBitmap(panel, wx.ID_ANY, wx.BitmapFromImage(img), (110,115))
-        self.play = wx.Button(panel, -1, 'Play/Pause', pos=(200,110))
-        self.volup = wx.Button(panel, -1, 'Vol Up',  pos=(200,140))
-        self.voldown = wx.Button(panel, -1, 'Vol Down', pos=(200,170))
-        self.seekbut = wx.Button(panel, -1, 'Seek', pos=(200,200))
-        self.killmovie = wx.Button(panel, -1, 'Stop Movie', pos=(105, 240))
+        self.imageCtrl = wx.StaticBitmap(panel, wx.ID_ANY, wx.BitmapFromImage(img), (110,85))
+        self.play = wx.Button(panel, -1, 'Play/Pause', pos=(200,80))
+        self.volup = wx.Button(panel, -1, 'Vol Up',  pos=(200,110))
+        self.voldown = wx.Button(panel, -1, 'Vol Down', pos=(200,140))
+        self.seekbut = wx.Button(panel, -1, 'Seek', pos=(200,170))
+        self.killmovie = wx.Button(panel, -1, 'Stop Movie', pos=(200, 200))
+        self.xbmc = wx.Button(panel, -1, 'Open XBMC', pos=(15, 200))
+        self.xbmcpass = wx.TextCtrl(panel, -1, size=(85, 25), pos=(15, 230), style=wx.TE_PASSWORD)
+        self.closexbmc = wx.Button(panel, -1, "Close XBMC", pos=(15, 260))
+        self.xbmcpass.SetValue("")
+        self.mc = wx.Button(panel,-1, 'Movie Control', pos=(105,200))
+        self.mcmovie = wx.TextCtrl(panel, -1, size=(90, 25), pos=(105, 230))
         clientlist=[]
         for client in Clients.keys ():
             clientlist.append(client)
-        self.clientbox = wx.ListBox(panel, -1, (22,115), (75,110), clientlist)
-        self.clienttext = wx.StaticText(panel, -1, 'Available Clients', (15,95))
+        self.clientbox = wx.ListBox(panel, -1, (22,85), (75,110), clientlist)
+        self.clienttext = wx.StaticText(panel, -1, 'Available Clients', (15,65))
         self.play.Bind(wx.EVT_BUTTON, self .pause)
         self.volup.Bind(wx.EVT_BUTTON, self.volUp)
         self.voldown.Bind(wx.EVT_BUTTON, self.volDown)
         self.seekbut.Bind(wx.EVT_BUTTON, self.seek)
         self.killmovie.Bind(wx.EVT_BUTTON, self.stopMovie)
         self.Bind(wx.EVT_LISTBOX, self.setClient)
-        self.status=wx.StaticText(panel, -1, "No Client Selected ")
-        self.duration=wx.StaticText(panel, -1, "No Duration Available ", pos=(0,40))
-        self.position=wx.StaticText(panel, -1, "Not Playing ", pos=(0,60))
+        self.xbmc.Bind(wx.EVT_BUTTON, self.run_xbmc)
+        self.closexbmc.Bind(wx.EVT_BUTTON, self.close_xbmc)
+        self.mc.Bind(wx.EVT_BUTTON, self.run_movie_control)
+        self.duration=wx.StaticText(panel, -1, " No Duration Available ", pos=(0,10))
+        self.position=wx.StaticText(panel, -1, " Not Playing ", pos=(0,30))
         font = wx.Font(10, wx.DECORATIVE, wx.BOLD, wx.NORMAL)
-        self.status.SetFont(font)
         self.duration.SetFont(font)
         self.position.SetFont(font)
         
     def onClose(self, event):
-        self.timer.Stop()
         self.Destroy()
-        
-    def update(self, event):
-        try:
-            cli = self.clientbox.GetStringSelection()
-            playing=str(self.sendcmd(self.cli, Clients[cli]['statuscmd']))
-            self.cli = Clients[cli]
-            duration, position = self.statuscmd(self.cli)
-            self.position.SetLabel("Currently at: "+str(position))
-        except Exception:
-            pass
+
+    def run_xbmc(self, event):
+        user = self.clientbox.GetStringSelection()
+        password = self.xbmcpass.GetValue()
+        self.xbmcpass.SetValue('')
+        if not len(password):
+            password = "none"
+        cmd = "python /home/james/Programs/XBMC/XBMC.py "+user+" "+password
+        Popen(cmd, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+
+    def close_xbmc(self, event):
+        Popen("killall XBMC", shell = True)
+
+    def run_movie_control(self, event):
+        client = self.clientbox.GetStringSelection()
+        movie = self.mcmovie.GetValue()
+        self.mcmovie.SetValue('')
+        cmd = "mc -m "+client+" "+movie
+        Popen(cmd, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         
     def scaleBitmap(self, bitmap, width, height):
         image = bitmap.Scale(width, height, wx.IMAGE_QUALITY_HIGH)
@@ -69,27 +84,36 @@ class dbusControl(wx.Frame):
         cli = self.clientbox.GetStringSelection()
         self.cli = Clients[cli]
         duration, position = self.statuscmd(self.cli)
-        playing=str(self.sendcmd(self.cli, Clients[cli]['statuscmd']))
+        playing=str(self.sendcmd(self.cli, Clients[cli]['statuscmd'])[0])
         if 'Cartoons' in playing:
             playing = playing.replace("/media/Cartoons/", "/media/External-4.0/Media/Lyndas/")  
-        path= str(playing).split("/")[1:6]
-        path = "/"+"/".join(path)
+        path ="/".join(playing.split("/")[:-1])+"/"
         try:
             imageFile = self.getImage(path)
         except: pass
-        playing = playing.split("/")[-1].split(".")[0]
-        gap = int((43*0.5) - (len(playing)*0.5))
-        self.status.SetLabel(" "*gap+"Now Playing: "+playing)
-        self.duration.SetLabel("Length of movie: "+str(duration))
-        self.position.SetLabel("Currently at: "+str(position))
+        try:
+            playing = playing.split("/")[-2]
+        except: playing = "Off"
+        gap = int((21) - (len(playing)/2))
+        frame.SetTitle(playing)
+        if len(duration):
+            self.duration.SetLabel("Length of movie: "+str(duration))
+            self.position.SetLabel("Currently at: "+str(position))
+        else:
+            self.duration.SetLabel(" Length of movie: N/A")
+            self.position.SetLabel(" Currently at: N/A")
 
     def getImage(self, path):
-        for file in os.listdir(path):
-            if file.endswith(".jpg"):
-                imagepath = path+"/"+file
-        img = wx.Image(imagepath, wx.BITMAP_TYPE_JPEG)
-        image = self.scaleBitmap(img, 75, 110)
-        self.imageCtrl.SetBitmap(wx.BitmapFromImage(image))
+        if not path == "/":
+            for file in os.listdir(path):
+                if file.endswith(".jpg"):
+                    imagepath = path+"/"+file
+            img = wx.Image(imagepath, wx.BITMAP_TYPE_JPEG)
+            image = self.scaleBitmap(img, 75, 110)
+            self.imageCtrl.SetBitmap(wx.BitmapFromImage(image))
+        else:
+            img = wx.EmptyImage(75,110)
+            self.imageCtrl.SetBitmap(wx.BitmapFromImage(img))
         self.Refresh() 
 
     def timecorrect(self, dur, pos):
@@ -119,12 +143,16 @@ class dbusControl(wx.Frame):
         self.client.connect(cli['host'], port=cli['port'], username=cli['user'], password=cli['pass'])
         self.Stdin, self.Stdout, self.Stderr = self.client.exec_command(cmd)
         a = self.Stdout.read().strip()
-        duration = a.split(':')[1].split("\n")[0]
-        position = a.split(':')[2].split("\n")[0]
-        duration, position = self.timecorrect(duration, position)
-        duration = str(duration).split(".")[0]
-        position = str(position).split(".")[0]
-        self.client.close()
+        try:
+            duration = a.split(':')[1].split("\n")[0]
+            position = a.split(':')[2].split("\n")[0]
+            duration, position = self.timecorrect(duration, position)
+            duration = str(duration).split(".")[0]
+            position = str(position).split(".")[0]
+            self.client.close()
+        except:
+            duration = ""
+            position = ""
         return duration, position
     
     def sendcmd(self, cli, cmd):
@@ -132,11 +160,11 @@ class dbusControl(wx.Frame):
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.client.connect(cli['host'], port=cli['port'], username=cli['user'], password=cli['pass'])
         self.Stdin, self.Stdout, self.Stderr = self.client.exec_command(cmd)
-        ret = self.Stdout.readlines()        
+        ret = self.Stdout.readlines()
         return ret
 
 if __name__ == '__main__':
     app = wx.App()
-    frame = dbusControl(None, -1, 'DBUSGUI')
+    frame = dbusControl(None, -1, 'No Title Availabile')
     frame.Show()
     app.MainLoop()
