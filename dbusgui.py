@@ -53,6 +53,7 @@ class dbusControl(wx.Frame):
         font = wx.Font(10, wx.DECORATIVE, wx.BOLD, wx.NORMAL)
         self.duration.SetFont(font)
         self.position.SetFont(font)
+        self.playpause = 0
         
     def onClose(self, event):
         self.Destroy()
@@ -83,25 +84,48 @@ class dbusControl(wx.Frame):
     def setClient(self, event):
         cli = self.clientbox.GetStringSelection()
         self.cli = Clients[cli]
-        duration, position = self.statuscmd(self.cli)
-        playing=str(self.sendcmd(self.cli, Clients[cli]['statuscmd'])[0])
-        if 'Cartoons' in playing:
-            playing = playing.replace("/media/Cartoons/", "/media/External-4.0/Media/Lyndas/")  
-        path ="/".join(playing.split("/")[:-1])+"/"
-        try:
-            imageFile = self.getImage(path)
-        except: pass
-        try:
-            playing = playing.split("/")[-2]
-        except: playing = "Off"
-        gap = int((21) - (len(playing)/2))
-        frame.SetTitle(playing)
-        if len(duration):
-            self.duration.SetLabel("Length of movie: "+str(duration))
-            self.position.SetLabel("Currently at: "+str(position))
+        if not self.cli['user'] == 'james':
+            duration, position = self.statuscmd(self.cli)
+            playing=str(self.sendcmd(self.cli, Clients[cli]['statuscmd'])[0])
+            if 'Cartoons' in playing:
+                playing = playing.replace("/media/Cartoons/", "/media/External-4.0/Media/Lyndas/")  
+            path ="/".join(playing.split("/")[:-1])+"/"
+            try:
+                imageFile = self.getImage(path)
+            except: pass
+            try:
+                playing = playing.split("/")[-2]
+            except: playing = "Off"
+            gap = int((21) - (len(playing)/2))
+            frame.SetTitle(playing)
+            if len(duration):
+                self.duration.SetLabel("Length of movie: "+str(duration))
+                self.position.SetLabel("Currently at: "+str(position))
+            else:
+                self.duration.SetLabel(" Length of movie: N/A")
+                self.position.SetLabel(" Currently at: N/A")
         else:
-            self.duration.SetLabel(" Length of movie: N/A")
-            self.position.SetLabel(" Currently at: N/A")
+            cmd = Popen('whatsplaying.py', shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+            playing = cmd.communicate()[0].strip()
+            trying = 'mediainfo --fullscan '+playing+' | grep -m 3 Duration | cut -d\: -f2 | xargs'
+            cmd = Popen(trying, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+            duration = ":".join(cmd.communicate()[0].split(" ")[3:6]).replace("h","").replace("mn","").replace("s","")
+            position = "Location Not Available"           
+            try:
+                path = "/"+"/".join(playing.split("/")[:-1])
+                imageFile = self.getImage(path)
+            except: pass
+            try:
+                playing = playing.split("/")[-2]
+            except: playing = "Off"
+            gap = int((21) - (len(playing)/2))
+            frame.SetTitle(playing)
+            if len(duration):
+                self.duration.SetLabel("Length of movie: "+str(duration))
+                self.position.SetLabel(position)
+            else:
+                self.duration.SetLabel(" Length of movie: N/A")
+                self.position.SetLabel(" Currently at: N/A")
 
     def getImage(self, path):
         if not path == "/":
@@ -123,19 +147,51 @@ class dbusControl(wx.Frame):
 
 
     def volUp(self, event):
+        if self.cli['user'] == "james":
+            self.james('volumeup')
         self.sendcmd(self.cli, volUp)
 
     def pause(self, event):
+        if self.cli['user'] == "james":
+            self.james('pause')
         self.sendcmd(self.cli, Pause)
         
     def volDown(self, event):
+        if self.cli['user'] == "james":
+            self.james('volumedown')
         self.sendcmd(self.cli, volDown)
 
     def stopMovie(self, event):
+        if self.cli['user'] == "james":
+            self.james('killmovie')
         self.sendcmd(self.cli, KillMovie)
         
     def seek(self, event):
+        if self.cli['user'] == "james":
+            pass
         self.sendcmd(self.cli, Seek+" 120")
+
+    def james(self, var):
+        if var == 'killmovie':
+            Popen('vlcdbus vlc quit', shell= True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        elif var == 'pause':
+            if self.playpause == 0:
+                Popen('vlcdbus vlc pause', shell= True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+                self.playpause += 1
+            elif self.playpause == 1:
+                Popen('vlcdbus vlc play', shell= True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+                self.playpause -=1
+        elif var == 'volumeup':
+            cmd = Popen('vlcdbus vlc volume', shell= True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+            vol = cmd.communicate()
+            volnum = str(float(vol[0]) + 0.1)
+            Popen('vlcdbus vlc volume '+volnum, shell= True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        elif var == 'volumedown':
+            cmd = Popen('vlcdbus vlc volume', shell= True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+            vol = cmd.communicate()
+            volnum = str(float(vol[0]) - 0.1)
+            Popen('vlcdbus vlc volume '+volnum, shell= True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+    
 
     def statuscmd(self, cli, cmd=Status):
         self.client=paramiko.client.SSHClient()
