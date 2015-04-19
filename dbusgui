@@ -126,7 +126,7 @@ class dbusControl(wx.Frame):
             cmd = Popen(cmd, shell=True, stdin=PIPE,
                         stdout=PIPE, stderr=STDOUT)
             duration = ":".join(cmd.communicate()[0].split(" ")[3:6])
-            duration = duration.translate(None, ['hmns'])
+            duration = duration.translate(None, 'hmns')
             # duration = duration.replace("h", "")
             # duration = duration.replace("mn", "").replace("s", "")
 

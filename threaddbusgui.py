@@ -12,15 +12,9 @@ from subprocess import Popen, PIPE, STDOUT
 PICKLEFILE = os.path.expanduser('~/.clients.p')
 CLIENTS = pickle.load(file(PICKLEFILE, 'rb'))
 
-volUp = '$HOME/bin/dbuscontrol volumeup'
-volDown = '$HOME/bin/dbuscontrol volumedown'
 setPos = '$HOME/bin/dbuscontrol setposition'
-Seek = '$HOME/bin/dbuscontrol seek'
-Pause = '$HOME/bin/dbuscontrol pause'
-Status = '$HOME/bin/dbuscontrol status'
-KillMovie = '$HOME/bin/killmovie'
-duration = str(300)
-position = str(150)
+# duration = str(300)
+# position = str(150)
 
 
 class ThreadedFunction(threading.Thread):
@@ -52,7 +46,7 @@ class dbusControl(wx.Frame):
         panel = wx.Panel(self, -1, (50, 240))
         self.Q = Queue.Queue()
         self.timer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.onTime, self.timer)
+        self.Bind(wx.EVT_TIMER, self.onTimer, self.timer)
         self.playpause = 0
 
         # Creates a blank image to hold movie image
@@ -109,7 +103,10 @@ class dbusControl(wx.Frame):
         self.Destroy()
 
     def onTimer(self, event):
-        pass
+        if not self.Q.empty():
+            s = self.Q.get()
+            if s:
+                print(s)
 
     # Runs xbmc passing in user and password
     def run_xbmc(self, event):
@@ -155,7 +152,7 @@ class dbusControl(wx.Frame):
             cmd = Popen(cmd, shell=True, stdin=PIPE,
                         stdout=PIPE, stderr=STDOUT)
             duration = ":".join(cmd.communicate()[0].split(" ")[3:6])
-            duration = duration.translate(None, ['hmns'])
+            duration = duration.translate(None, 'hmns')
             # duration = duration.replace("h", "")
             # duration = duration.replace("mn", "").replace("s", "")
 
@@ -231,61 +228,50 @@ class dbusControl(wx.Frame):
 
     def volUp(self, event):
         if self.cli['user'] == "james":
-            self.james('volumeup')
-        self.sendcmd(self.cli, volUp)
-
-    def pause(self, event):
-        if self.cli['user'] == "james":
-            self.james('pause')
-        self.sendcmd(self.cli, Pause)
+            cmd = '$HOME/bin/vlcdbus vlc volume $(echo "scale=3; \
+                $($HOME/bin/vlcdbus vlc volume)"+.1 | bc)'
+        else:
+            cmd = '$HOME/bin/dbuscontrol volumeup'
+        self.sendcmd(self.cli, cmd)
 
     def volDown(self, event):
         if self.cli['user'] == "james":
-            self.james('volumedown')
-        self.sendcmd(self.cli, volDown)
+            cmd = '$HOME/bin/vlcdbus vlc volume $(echo "scale=3; \
+                    $($HOME/bin/vlcdbus vlc volume)"-.1 | bc)'
+        else:
+            cmd = '$HOME/bin/dbuscontrol volumedown'
+        self.sendcmd(self.cli, cmd)
+
+    def pause(self, event):
+        if self.cli['user'] == "james":
+            if self.playpause == 0:
+                cmd = '$HOME/bin/vlcdbus vlc pause'
+                self.playpause += 1
+            elif self.playpause == 1:
+                cmd = '$HOME/bin/vlcdbus vlc play'
+                self.playpause -= 1
+        else:
+            cmd = '$HOME/bin/dbuscontrol pause'
+        self.sendcmd(self.cli, cmd)
 
     def stopMovie(self, event):
-        if self.cli['user'] == "james":
-            self.james('killmovie')
-        self.sendcmd(self.cli, KillMovie)
+        if self.cli['user'] == 'james':
+            cmd = "$HOME/bin/vlcdbus vlc quit"
+        else:
+            cmd = '$HOME/bin/killmovie'
+        self.sendcmd(self.cli, cmd)
 
     def seek(self, event):
         if self.cli['user'] == "james":
             pass
-        self.sendcmd(self.cli, Seek+" 120")
-
-    # Most the local stuff went here
-    def james(self, var):
-        if var == 'killmovie':
-            Popen('vlcdbus vlc quit', shell=True, stdin=PIPE,
-                  stdout=PIPE, stderr=STDOUT)
-        elif var == 'pause':
-            if self.playpause == 0:
-                Popen('vlcdbus vlc pause', shell=True, stdin=PIPE,
-                      stdout=PIPE, stderr=STDOUT)
-                self.playpause += 1
-            elif self.playpause == 1:
-                Popen('vlcdbus vlc play', shell=True, stdin=PIPE,
-                      stdout=PIPE, stderr=STDOUT)
-                self.playpause -= 1
-        elif var == 'volumeup':
-            cmd = Popen('vlcdbus vlc volume', shell=True, stdin=PIPE,
-                        stdout=PIPE, stderr=STDOUT)
-            vol = cmd.communicate()
-            volnum = str(float(vol[0]) + 0.1)
-            Popen('vlcdbus vlc volume '+volnum, shell=True, stdin=PIPE,
-                  stdout=PIPE, stderr=STDOUT)
-        elif var == 'volumedown':
-            cmd = Popen('vlcdbus vlc volume', shell=True, stdin=PIPE,
-                        stdout=PIPE, stderr=STDOUT)
-            vol = cmd.communicate()
-            volnum = str(float(vol[0]) - 0.1)
-            Popen('vlcdbus vlc volume '+volnum, shell=True, stdin=PIPE,
-                  stdout=PIPE, stderr=STDOUT)
+        else:
+            cmd = '$HOME/bin/dbuscontrol seek 120'
+            self.sendcmd(self.cli, cmd)
 
     # Rip off from movie controller mostly some little tweaks
     def statuscmd(self, cli):
-        a = self.sendcmd(cli, Status)
+        cmd = '$HOME/bin/dbuscontrol status'
+        a = self.sendcmd(cli, cmd)
         try:
             duration = a[0].split(':')[1].split("\n")[0]
             position = a[1].split(':')[1].split("\n")[0]
