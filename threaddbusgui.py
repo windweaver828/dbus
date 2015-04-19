@@ -161,11 +161,11 @@ class dbusControl(wx.Frame):
             position = "Location Not Available"
 
             # Uses path to image and returns resized image to place in window
-            # try:
-            #     path = "/"+"/".join(playing.split("/")[:-1])
-            #     imageFile = self.getImage(path)
-            # except:
-            #     pass
+            try:
+                path = "/"+"/".join(playing.split("/")[:-1])
+                self.getImage(path)
+            except:
+                pass
             try:
                 playing = playing.split("/")[-2]
             except:
@@ -183,13 +183,11 @@ class dbusControl(wx.Frame):
         else:
             duration, position = self.statuscmd(self.cli)
             playing = str(self.sendcmd(self.cli, self.cli['statuscmd'])[0])
-            if 'Cartoons' in playing:
-                playing = playing.replace("/media/Cartoons/",
-                                          "/media/External-4.0/Media/Lyndas/")
-            # path = "/".join(playing.split("/")[:-1])+"/"
-            # try:
-            #     imageFile = self.getImage(path)
-            # except: pass
+            path = "/".join(playing.split("/")[:-1])+"/"
+            try:
+                self.getImage(path)
+            except:
+                pass
             try:
                 playing = playing.split("/")[-2]
             except:
