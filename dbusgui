@@ -87,14 +87,41 @@ class dbusControl(wx.Frame):
     def scaleBitmap(self, bitmap, width, height):
         return bitmap.Scale(width, height, wx.IMAGE_QUALITY_HIGH)
         
-    
-    def setClient(self, event): ## Sets client, polls client for movie name, duration of movie,
-            ##current location in movie, path to image, and sets Static text to reflect values 
-        cli = self.clientbox.GetStringSelection()
-        self.cli = CLIENTS[cli]
+    # Sets client, polls client for movie name, duration of movie,
+    # current location in movie, path to image, and sets Static text
+    # to reflect values 
+    def setClient(self, event):
+        self.cli = CLIENTS[self.clientbox.GetStringSelection()]
 
-        ##This section if for remote use......
-        if not self.cli['user'] == 'james':
+        # This is for local 
+        if self.cli['user'] == 'james':
+            cmd = Popen('whatsplaying.py', shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+            playing = cmd.communicate()[0].strip()
+            # playing returns movie path with movie name /media/Ex../Media/Movies/Hey/Hey.mp4
+            trying = 'mediainfo --fullscan '+playing+' | grep -m 3 Duration | cut -d\: -f2 | xargs'
+            cmd = Popen(trying, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+            duration = ":".join(cmd.communicate()[0].split(" ")[3:6]).replace("h","").replace("mn","").replace("s","")
+            # All this is to get duration from mediainfo --fullscan figured how to get back
+            # 1:45:15 hour min sec
+            position = "Location Not Available"           
+            try: ## uses path to image and returns resized image to place in window
+                path = "/"+"/".join(playing.split("/")[:-1])
+                imageFile = self.getImage(path)
+            except: pass
+            try:
+                playing = playing.split("/")[-2]
+            except: playing = "Off"
+            gap = int((21) - (len(playing)/2))
+            frame.SetTitle(playing)
+            if len(duration):
+                self.duration.SetLabel("Length of movie: "+str(duration))
+                self.position.SetLabel(position)
+            else:
+                self.duration.SetLabel(" Length of movie: N/A")
+                self.position.SetLabel(" Currently at: N/A")
+
+        # This section if for remote        
+        else:            
             duration, position = self.statuscmd(self.cli)
             playing=str(self.sendcmd(self.cli, CLIENTS[cli]['statuscmd'])[0])
             if 'Cartoons' in playing:
@@ -114,33 +141,7 @@ class dbusControl(wx.Frame):
             else:
                 self.duration.SetLabel(" Length of movie: N/A")
                 self.position.SetLabel(" Currently at: N/A")
-        ## This is for local 
-        else:
-            cmd = Popen('whatsplaying.py', shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
-            playing = cmd.communicate()[0].strip()
-            ##playing returns movie path with movie name /media/Ex../Media/Movies/Hey/Hey.mp4
-            trying = 'mediainfo --fullscan '+playing+' | grep -m 3 Duration | cut -d\: -f2 | xargs'
-            cmd = Popen(trying, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
-            duration = ":".join(cmd.communicate()[0].split(" ")[3:6]).replace("h","").replace("mn","").replace("s","")
-            ##all this is to get duration from mediainfo --fullscan figured how to get back
-            ## 1:45:15 hour min sec
-            position = "Location Not Available"           
-            try: ## uses path to image and returns resized image to place in window
-                path = "/"+"/".join(playing.split("/")[:-1])
-                imageFile = self.getImage(path)
-            except: pass
-            try:
-                playing = playing.split("/")[-2]
-            except: playing = "Off"
-            gap = int((21) - (len(playing)/2))
-            frame.SetTitle(playing)
-            if len(duration):
-                self.duration.SetLabel("Length of movie: "+str(duration))
-                self.position.SetLabel(position)
-            else:
-                self.duration.SetLabel(" Length of movie: N/A")
-                self.position.SetLabel(" Currently at: N/A")
-
+            
     # Uses movie path to get image and resize it and insert
     # into blank image contrainer we created earlier
     def getImage(self, path):
