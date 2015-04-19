@@ -45,6 +45,7 @@ class dbusControl(wx.Frame):
                           style=no_resize)
         panel = wx.Panel(self, -1, (50, 240))
         self.Q = Queue.Queue()
+        self.thread = False
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.onTimer, self.timer)
         self.playpause = 0
@@ -90,23 +91,20 @@ class dbusControl(wx.Frame):
         self.voldown.Bind(wx.EVT_BUTTON, self.volDown)
         self.seekbut.Bind(wx.EVT_BUTTON, self.seek)
         self.killmovie.Bind(wx.EVT_BUTTON, self.stopMovie)
-        self.Bind(wx.EVT_LISTBOX, self.setClient)
+        self.Bind(wx.EVT_LISTBOX, self.onListBox, self.clientbox)
         self.xbmc.Bind(wx.EVT_BUTTON, self.run_xbmc)
         self.closexbmc.Bind(wx.EVT_BUTTON, self.close_xbmc)
         self.mc.Bind(wx.EVT_BUTTON, self.run_movie_control)
         # Rebind global (OS) exit to our exit function
         self.Bind(wx.EVT_CLOSE, self.onClose)
 
+        self.time = 10
         self.timer.Start(1000)
 
     def onClose(self, event):
+        if self.thread and self.thread.isAlive():
+            self.thread.finish()
         self.Destroy()
-
-    def onTimer(self, event):
-        if not self.Q.empty():
-            s = self.Q.get()
-            if s:
-                print(s)
 
     # Runs xbmc passing in user and password
     def run_xbmc(self, event):
@@ -134,11 +132,47 @@ class dbusControl(wx.Frame):
     def scaleBitmap(self, bitmap, width, height):
         return bitmap.Scale(width, height, wx.IMAGE_QUALITY_HIGH)
 
+    def onTimer(self, event):
+        if not hasattr(self, 'cli'):
+            return
+        if self.time == 5:
+            self.time = 0
+            self.thread = ThreadedFunction(self.refreshStatus)
+        if not self.Q.empty():
+            s = self.Q.get()
+            if type(s) == tuple:
+                duration, position = s
+                if not position:
+                    position = " Location Not Available"
+                self.duration.SetLabel(" Length of movie: "+str(duration))
+                self.position.SetLabel(" Currently at: "+str(position))
+        self.time += 1
+
     # Sets client, polls client for movie name, duration of movie,
     # current location in movie, path to image, and sets Static text
     # to reflect values
-    def setClient(self, event):
+    def onListBox(self, event):
         self.cli = CLIENTS[self.clientbox.GetStringSelection()]
+
+    def refreshStatus(self):
+        cmd = '$HOME/bin/dbuscontrol status'
+        a = self.sendcmd(self.cli, cmd)
+        try:
+            duration = a[0].split(':')[1].split("\n")[0]
+            position = a[1].split(':')[1].split("\n")[0]
+            duration, position = self.timecorrect(duration, position)
+            duration = str(duration).split(".")[0]
+            position = str(position).split(".")[0]
+            self.client.close()
+        except:
+            duration = ""
+            position = ""
+        self.Q.put(duration, position)
+
+    def threadedCommand(self, Q, command):
+        Q.put(self.sendcmd(self.cli, command))
+
+    def setClient(self):
 
         # This is for local
         if self.cli['user'] == 'james':
@@ -153,8 +187,6 @@ class dbusControl(wx.Frame):
                         stdout=PIPE, stderr=STDOUT)
             duration = ":".join(cmd.communicate()[0].split(" ")[3:6])
             duration = duration.translate(None, 'hmns')
-            # duration = duration.replace("h", "")
-            # duration = duration.replace("mn", "").replace("s", "")
 
             # All this is to get duration from mediainfo --fullscan
             # figured how to get back 1:45:15 hour min sec
@@ -181,7 +213,7 @@ class dbusControl(wx.Frame):
 
         # This section if for remote
         else:
-            duration, position = self.statuscmd(self.cli)
+            # duration, position = self.statuscmd(self.cli)
             playing = str(self.sendcmd(self.cli, self.cli['statuscmd'])[0])
             path = "/".join(playing.split("/")[:-1])+"/"
             try:
@@ -194,12 +226,12 @@ class dbusControl(wx.Frame):
                 playing = "Off"
             # gap = int((21) - (len(playing)/2))
             frame.SetTitle(playing)
-            if len(duration):
-                self.duration.SetLabel("Length of movie: "+str(duration))
-                self.position.SetLabel("Currently at: "+str(position))
-            else:
-                self.duration.SetLabel(" Length of movie: N/A")
-                self.position.SetLabel(" Currently at: N/A")
+            # if len(duration):
+            #     self.duration.SetLabel("Length of movie: "+str(duration))
+            #     self.position.SetLabel("Currently at: "+str(position))
+            # else:
+            #     self.duration.SetLabel(" Length of movie: N/A")
+            #     self.position.SetLabel(" Currently at: N/A")
 
     # Uses movie path to get image and resize it and insert
     # into blank image contrainer we created earlier
@@ -266,32 +298,16 @@ class dbusControl(wx.Frame):
             cmd = '$HOME/bin/dbuscontrol seek 120'
             self.sendcmd(self.cli, cmd)
 
-    # Rip off from movie controller mostly some little tweaks
-    def statuscmd(self, cli):
-        cmd = '$HOME/bin/dbuscontrol status'
-        a = self.sendcmd(cli, cmd)
-        try:
-            duration = a[0].split(':')[1].split("\n")[0]
-            position = a[1].split(':')[1].split("\n")[0]
-            duration, position = self.timecorrect(duration, position)
-            duration = str(duration).split(".")[0]
-            position = str(position).split(".")[0]
-            self.client.close()
-        except:
-            duration = ""
-            position = ""
-        return duration, position
-
     # Send command via ssh and return output, if any
     def sendcmd(self, cli, cmd):
         self.client = paramiko.client.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.client.connect(cli['host'], port=cli['port'],
                             username=cli['user'], password=cli['pass'])
-        self.Stdin, self.Stdout, self.Stderr = self.client.exec_command(cmd)
-        ret = self.Stdout.readlines()
-        if ret:
-            return ret
+        Stdin, Stdout, Stderr = self.client.exec_command(cmd)
+        ret = Stdout.readlines()
+        print ret
+        return ret
 
 if __name__ == '__main__':
     app = wx.App()
