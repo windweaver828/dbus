@@ -284,8 +284,8 @@ class dbusControl(wx.Frame):
                   stdout=PIPE, stderr=STDOUT)
 
     # Rip off from movie controller mostly some little tweaks
-    def statuscmd(self, cli, cmd=Status):
-        a = self.sendcmd(cli, cmd)
+    def statuscmd(self, cli):
+        a = self.sendcmd(cli, Status)
         try:
             duration = a[0].split(':')[1].split("\n")[0]
             position = a[1].split(':')[1].split("\n")[0]
