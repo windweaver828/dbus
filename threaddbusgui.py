@@ -49,6 +49,7 @@ class dbusControl(wx.Frame):
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.onTimer, self.timer)
         self.playpause = 0
+        self.curpos = 0
 
         # Creates a blank image to hold movie image
         img = wx.EmptyImage(75, 110)
@@ -98,12 +99,14 @@ class dbusControl(wx.Frame):
         # Rebind global (OS) exit to our exit function
         self.Bind(wx.EVT_CLOSE, self.onClose)
 
-        self.time = 10
+        self.threads = list()
+        self.time = 3
         self.timer.Start(1000)
 
     def onClose(self, event):
-        if self.thread and self.thread.isAlive():
-            self.thread.finish()
+        for thread in self.threads:
+            if thread and thread.isAlive():
+                thread.finish()
         self.Destroy()
 
     # Runs xbmc passing in user and password
@@ -135,24 +138,50 @@ class dbusControl(wx.Frame):
     def onTimer(self, event):
         if not hasattr(self, 'cli'):
             return
-        if self.time == 5:
+        if self.time >= 5:
             self.time = 0
-            self.thread = ThreadedFunction(self.refreshStatus)
+            self.threads.append(ThreadedFunction(self.refreshStatus))
+        else:
+            self.time += 1
+            if self.curpos:
+                self.curpos += 1000000
+            position = datetime.timedelta(microseconds=int(self.curpos))
+            position = str(position).split(".")[0]
+            self.position.SetLabel(" Currently at: "+str(position))
         if not self.Q.empty():
             s = self.Q.get()
-            if type(s) == tuple:
+            if len(s) == 2:
                 duration, position = s
                 if not position:
                     position = " Location Not Available"
                 self.duration.SetLabel(" Length of movie: "+str(duration))
                 self.position.SetLabel(" Currently at: "+str(position))
-        self.time += 1
+            elif len(s) == 1:
+                s = s[0]
+                path = "/".join(s.split("/")[:-1])+"/"
+                try:
+                    self.getImage(path)
+                except:
+                    pass
+                try:
+                    playing = s.split("/")[-2]
+                except:
+                    playing = "Off"
+                    self.curpos = 0
+                self.SetTitle(playing)
+            else:
+                print("Threads likely crashed output from Q is below")
+                print("Usually only happens on the first click of the")
+                print("Decrease self.time on init to be a few seconds")
+                print("less than the reset interval")
+                print(s)
 
     # Sets client, polls client for movie name, duration of movie,
     # current location in movie, path to image, and sets Static text
     # to reflect values
     def onListBox(self, event):
         self.cli = CLIENTS[self.clientbox.GetStringSelection()]
+        self.threads.append(ThreadedFunction(self.refreshTitle))
 
     def refreshStatus(self):
         cmd = '$HOME/bin/dbuscontrol status'
@@ -160,17 +189,18 @@ class dbusControl(wx.Frame):
         try:
             duration = a[0].split(':')[1].split("\n")[0]
             position = a[1].split(':')[1].split("\n")[0]
-            duration, position = self.timecorrect(duration, position)
+            self.curpos = int(position)
+            duration = datetime.timedelta(microseconds=int(duration))
+            position = datetime.timedelta(microseconds=int(position))
             duration = str(duration).split(".")[0]
             position = str(position).split(".")[0]
-            self.client.close()
         except:
             duration = ""
             position = ""
-        self.Q.put(duration, position)
+        self.Q.put((duration, position))
 
-    def threadedCommand(self, Q, command):
-        Q.put(self.sendcmd(self.cli, command))
+    def refreshTitle(self):
+        self.Q.put(self.sendcmd(self.cli, self.cli['statuscmd']))
 
     def setClient(self):
 
@@ -203,35 +233,13 @@ class dbusControl(wx.Frame):
             except:
                 playing = "Off"
             # gap = int((21) - (len(playing)/2))
-            frame.SetTitle(playing)
+            self.SetTitle(playing)
             if len(duration):
                 self.duration.SetLabel("Length of movie: "+str(duration))
                 self.position.SetLabel(position)
             else:
                 self.duration.SetLabel(" Length of movie: N/A")
                 self.position.SetLabel(" Currently at: N/A")
-
-        # This section if for remote
-        else:
-            # duration, position = self.statuscmd(self.cli)
-            playing = str(self.sendcmd(self.cli, self.cli['statuscmd'])[0])
-            path = "/".join(playing.split("/")[:-1])+"/"
-            try:
-                self.getImage(path)
-            except:
-                pass
-            try:
-                playing = playing.split("/")[-2]
-            except:
-                playing = "Off"
-            # gap = int((21) - (len(playing)/2))
-            frame.SetTitle(playing)
-            # if len(duration):
-            #     self.duration.SetLabel("Length of movie: "+str(duration))
-            #     self.position.SetLabel("Currently at: "+str(position))
-            # else:
-            #     self.duration.SetLabel(" Length of movie: N/A")
-            #     self.position.SetLabel(" Currently at: N/A")
 
     # Uses movie path to get image and resize it and insert
     # into blank image contrainer we created earlier
@@ -249,20 +257,13 @@ class dbusControl(wx.Frame):
             self.imageCtrl.SetBitmap(wx.BitmapFromImage(img))
         self.Refresh()
 
-    # Changes movie duration and position from
-    # microseconds into human readable time
-    def timecorrect(self, dur, pos):
-        duration = datetime.timedelta(microseconds=int(dur))
-        position = datetime.timedelta(microseconds=int(pos))
-        return duration, position
-
     def volUp(self, event):
         if self.cli['user'] == "james":
             cmd = '$HOME/bin/vlcdbus vlc volume $(echo "scale=3; \
                 $($HOME/bin/vlcdbus vlc volume)"+.1 | bc)'
         else:
             cmd = '$HOME/bin/dbuscontrol volumeup'
-        self.sendcmd(self.cli, cmd)
+        ThreadedFunction(self.sendcmd, self.cli, cmd)
 
     def volDown(self, event):
         if self.cli['user'] == "james":
@@ -270,7 +271,7 @@ class dbusControl(wx.Frame):
                     $($HOME/bin/vlcdbus vlc volume)"-.1 | bc)'
         else:
             cmd = '$HOME/bin/dbuscontrol volumedown'
-        self.sendcmd(self.cli, cmd)
+        ThreadedFunction(self.sendcmd, self.cli, cmd)
 
     def pause(self, event):
         if self.cli['user'] == "james":
@@ -282,31 +283,30 @@ class dbusControl(wx.Frame):
                 self.playpause -= 1
         else:
             cmd = '$HOME/bin/dbuscontrol pause'
-        self.sendcmd(self.cli, cmd)
+        ThreadedFunction(self.sendcmd, self.cli, cmd)
 
     def stopMovie(self, event):
         if self.cli['user'] == 'james':
             cmd = "$HOME/bin/vlcdbus vlc quit"
         else:
             cmd = '$HOME/bin/killmovie'
-        self.sendcmd(self.cli, cmd)
+        ThreadedFunction(self.sendcmd, self.cli, cmd)
 
     def seek(self, event):
         if self.cli['user'] == "james":
             pass
         else:
             cmd = '$HOME/bin/dbuscontrol seek 120'
-            self.sendcmd(self.cli, cmd)
+            ThreadedFunction(self.sendcmd, self.cli, cmd)
 
     # Send command via ssh and return output, if any
     def sendcmd(self, cli, cmd):
-        self.client = paramiko.client.SSHClient()
-        self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.client.connect(cli['host'], port=cli['port'],
+        client = paramiko.client.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(cli['host'], port=cli['port'],
                             username=cli['user'], password=cli['pass'])
-        Stdin, Stdout, Stderr = self.client.exec_command(cmd)
+        Stdin, Stdout, Stderr = client.exec_command(cmd)
         ret = Stdout.readlines()
-        print ret
         return ret
 
 if __name__ == '__main__':
