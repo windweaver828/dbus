@@ -160,15 +160,14 @@ class dbusControl(wx.Frame):
             if 'Cartoons' in playing:
                 playing = playing.replace("/media/Cartoons/",
                                           "/media/External-4.0/Media/Lyndas/")
-            # path = "/".join(playing.split("/")[:-1])+"/"
-            # try:
-            #     imageFile = self.getImage(path)
-            # except: pass
+            path = "/".join(playing.split("/")[:-1])+"/"
+            try:
+                imageFile = self.getImage(path)
+            except: pass
             try:
                 playing = playing.split("/")[-2]
             except:
                 playing = "Off"
-            # gap = int((21) - (len(playing)/2))
             frame.SetTitle(playing)
             if len(duration):
                 self.duration.SetLabel("Length of movie: "+str(duration))

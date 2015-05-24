@@ -11,7 +11,7 @@ from subprocess import Popen, PIPE, STDOUT
 
 PICKLEFILE = os.path.expanduser('~/.clients.p')
 CLIENTS = pickle.load(file(PICKLEFILE, 'rb'))
-
+last_played = {}
 setPos = '$HOME/bin/dbuscontrol setposition'
 # duration = str(300)
 # position = str(150)
@@ -48,6 +48,7 @@ class dbusControl(wx.Frame):
         self.thread = False
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.onTimer, self.timer)
+        self.Bind(wx.EVT_CHAR_HOOK, self.OnKey)
         self.playpause = 0
         self.curpos = 0
 
@@ -67,6 +68,7 @@ class dbusControl(wx.Frame):
         self.xbmcpass = wx.TextCtrl(panel, -1, size=(85, 25), pos=(15, 230),
                                     style=wx.TE_PASSWORD)
         self.xbmcpass.SetValue("")
+        self.restart = wx.Button(panel, -1, "Restart Movie", pos=(105, 260))
         self.closexbmc = wx.Button(panel, -1, "Close XBMC", pos=(15, 260))
         self.mc = wx.Button(panel, -1, 'Movie Control', pos=(105, 200))
         self.mcmovie = wx.TextCtrl(panel, -1, size=(90, 25), pos=(105, 230))
@@ -96,6 +98,7 @@ class dbusControl(wx.Frame):
         self.xbmc.Bind(wx.EVT_BUTTON, self.run_xbmc)
         self.closexbmc.Bind(wx.EVT_BUTTON, self.close_xbmc)
         self.mc.Bind(wx.EVT_BUTTON, self.run_movie_control)
+        self.restart.Bind(wx.EVT_BUTTON, self.re_start)
         # Rebind global (OS) exit to our exit function
         self.Bind(wx.EVT_CLOSE, self.onClose)
 
@@ -109,6 +112,16 @@ class dbusControl(wx.Frame):
                 thread.finish()
         self.Destroy()
 
+    def OnKey(self, e):
+        if e.GetKeyCode() == wx.WXK_RETURN:
+            focused = self.FindFocus()
+            if focused == self.mcmovie:
+                self.run_movie_control(e)
+            elif focused == self.xbmcpass:
+                self.run_xbmc(e)
+        else:
+            e.Skip()
+
     # Runs xbmc passing in user and password
     def run_xbmc(self, event):
         user = self.clientbox.GetStringSelection()
@@ -121,6 +134,11 @@ class dbusControl(wx.Frame):
 
     def close_xbmc(self, event):
         Popen("killall XBMC", shell=True)
+
+    # Restarts last played movie 
+    def re_start(self, event):
+        cli = self.clientbox.GetStringSelection()
+        self.run_movie_control(last_played[cli])
 
     # Plays movie on remote client using
     # Movie controller -m flag (auto play best match)
@@ -230,9 +248,11 @@ class dbusControl(wx.Frame):
                 pass
             try:
                 playing = playing.split("/")[-2]
+                last_played[cli] = playing
             except:
                 playing = "Off"
             # gap = int((21) - (len(playing)/2))
+            last_played[cli] = playing
             self.SetTitle(playing)
             if len(duration):
                 self.duration.SetLabel("Length of movie: "+str(duration))
@@ -278,9 +298,11 @@ class dbusControl(wx.Frame):
             if self.playpause == 0:
                 cmd = '$HOME/bin/vlcdbus vlc pause'
                 self.playpause += 1
+                self.timer.Cancel()
             elif self.playpause == 1:
                 cmd = '$HOME/bin/vlcdbus vlc play'
                 self.playpause -= 1
+                self.timer.Start(1000)
         else:
             cmd = '$HOME/bin/dbuscontrol pause'
         ThreadedFunction(self.sendcmd, self.cli, cmd)
