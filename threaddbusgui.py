@@ -11,11 +11,8 @@ from subprocess import Popen, PIPE, STDOUT
 
 PICKLEFILE = os.path.expanduser('~/.clients.p')
 CLIENTS = pickle.load(file(PICKLEFILE, 'rb'))
-last_played = {}
-setPos = '$HOME/bin/dbuscontrol setposition'
-# duration = str(300)
-# position = str(150)
 
+setPos = '$HOME/bin/dbuscontrol setposition'
 
 class ThreadedFunction(threading.Thread):
     """
@@ -35,14 +32,18 @@ class ThreadedFunction(threading.Thread):
     def finish(self):
         self.join()
 
-
 class dbusControl(wx.Frame):
     def __init__(self, parent, id, title):
         no_resize = wx.DEFAULT_FRAME_STYLE & ~ \
             (wx.RESIZE_BORDER | wx.RESIZE_BOX | wx.MAXIMIZE_BOX)
         wx.Frame.__init__(self, parent, id, title,
-                          size=wx.Size(300, 300),
+                          size=wx.Size(300, 275),
                           style=no_resize)
+        self.lastplayedfile = os.path.expanduser('~/.lastplayed.pkl')
+        if not os.path.isfile(self.lastplayedfile):
+            self.lastplayed = {'james':'', 'ryann':'', 'lynda':'', 'jayme':''}
+        else:
+            self.lastplayed = pickle.load(file(self.lastplayedfile, 'rb'))
         panel = wx.Panel(self, -1, (50, 240))
         self.Q = Queue.Queue()
         self.thread = False
@@ -51,7 +52,6 @@ class dbusControl(wx.Frame):
         self.Bind(wx.EVT_CHAR_HOOK, self.OnKey)
         self.playpause = 0
         self.curpos = 0
-
         # Creates a blank image to hold movie image
         img = wx.EmptyImage(75, 110)
         self.imageCtrl = wx.StaticBitmap(panel, -1,
@@ -65,13 +65,10 @@ class dbusControl(wx.Frame):
         self.seekbut = wx.Button(panel, -1, 'Seek', pos=(200, 170))
         self.killmovie = wx.Button(panel, -1, 'Stop Movie', pos=(200, 200))
         self.xbmc = wx.Button(panel, -1, 'Open XBMC', pos=(15, 200))
-        self.xbmcpass = wx.TextCtrl(panel, -1, size=(85, 25), pos=(15, 230),
-                                    style=wx.TE_PASSWORD)
-        self.xbmcpass.SetValue("")
-        self.restart = wx.Button(panel, -1, "Restart Movie", pos=(105, 260))
-        self.closexbmc = wx.Button(panel, -1, "Close XBMC", pos=(15, 260))
-        self.mc = wx.Button(panel, -1, 'Movie Control', pos=(105, 200))
-        self.mcmovie = wx.TextCtrl(panel, -1, size=(90, 25), pos=(105, 230))
+        self.restart = wx.Button(panel, -1, "Restart Movie", pos=(105, 200))
+        self.closexbmc = wx.Button(panel, -1, "Close XBMC", pos=(15, 235))
+        self.mc = wx.Button(panel, -1, 'Play Movie -->', pos=(105, 235))
+        self.mcmovie = wx.TextCtrl(panel, -1, size=(85, 28), pos=(200, 235))
         self.clientbox = wx.ListBox(panel, -1, (22, 85),
                                     (75, 110), CLIENTS.keys())
         self.clienttext = wx.StaticText(panel, -1,
@@ -101,7 +98,6 @@ class dbusControl(wx.Frame):
         self.restart.Bind(wx.EVT_BUTTON, self.re_start)
         # Rebind global (OS) exit to our exit function
         self.Bind(wx.EVT_CLOSE, self.onClose)
-
         self.threads = list()
         self.time = 3
         self.timer.Start(1000)
@@ -117,35 +113,32 @@ class dbusControl(wx.Frame):
             focused = self.FindFocus()
             if focused == self.mcmovie:
                 self.run_movie_control(e)
-            elif focused == self.xbmcpass:
-                self.run_xbmc(e)
         else:
             e.Skip()
 
-    # Runs xbmc passing in user and password
     def run_xbmc(self, event):
-        user = self.clientbox.GetStringSelection()
-        password = self.xbmcpass.GetValue()
-        self.xbmcpass.SetValue('')
-        if not len(password):
-            password = "none"
-        cmd = "python /home/james/Programs/XBMC/XBMC.py "+user+" "+password
+        cmd = "python /home/james/Projects/pyqtxbmc/main.py"
         Popen(cmd, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
 
     def close_xbmc(self, event):
-        Popen("killall XBMC", shell=True)
+        Popen("killall QtXbmc", shell=True)
 
-    # Restarts last played movie 
+    # Restarts last played movie
     def re_start(self, event):
         cli = self.clientbox.GetStringSelection()
-        self.run_movie_control(last_played[cli])
+        self.run_movie_control(self.lastplayed[cli])
 
     # Plays movie on remote client using
     # Movie controller -m flag (auto play best match)
     def run_movie_control(self, event):
+        focused = self.FindFocus()
         cmd = "mc -m "
         cmd += self.clientbox.GetStringSelection()+" "
-        cmd += self.mcmovie.GetValue()
+        if focused == self.mcmovie:
+            cmd += self.mcmovie.GetValue()
+            print(cmd)
+        else:
+            cmd += self.lastplayed[self.clientbox.GetStringSelection()]
         Popen(cmd, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         self.mcmovie.SetValue('')
 
@@ -219,47 +212,12 @@ class dbusControl(wx.Frame):
 
     def refreshTitle(self):
         self.Q.put(self.sendcmd(self.cli, self.cli['statuscmd']))
-
-    def setClient(self):
-
-        # This is for local
-        if self.cli['user'] == 'james':
-            cmd = Popen('whatsplaying.py', shell=True, stdin=PIPE,
-                        stdout=PIPE, stderr=STDOUT)
-            playing = cmd.communicate()[0].strip()
-            # playing returns movie path with movie name
-            # /media/Ex../Media/Movies/Hey/Hey.mp4
-            cmd = 'mediainfo --fullscan ' + playing + \
-                  ' | grep -m 3 Duration | cut -d\: -f2 | xargs'
-            cmd = Popen(cmd, shell=True, stdin=PIPE,
-                        stdout=PIPE, stderr=STDOUT)
-            duration = ":".join(cmd.communicate()[0].split(" ")[3:6])
-            duration = duration.translate(None, 'hmns')
-
-            # All this is to get duration from mediainfo --fullscan
-            # figured how to get back 1:45:15 hour min sec
-            position = "Location Not Available"
-
-            # Uses path to image and returns resized image to place in window
-            try:
-                path = "/"+"/".join(playing.split("/")[:-1])
-                self.getImage(path)
-            except:
-                pass
-            try:
-                playing = playing.split("/")[-2]
-                last_played[cli] = playing
-            except:
-                playing = "Off"
-            # gap = int((21) - (len(playing)/2))
-            last_played[cli] = playing
-            self.SetTitle(playing)
-            if len(duration):
-                self.duration.SetLabel("Length of movie: "+str(duration))
-                self.position.SetLabel(position)
-            else:
-                self.duration.SetLabel(" Length of movie: N/A")
-                self.position.SetLabel(" Currently at: N/A")
+        title = (self.sendcmd(self.cli, self.cli['statuscmd']))
+        cli = self.clientbox.GetStringSelection()
+        p = (title[0].split(os.sep)[-1].split(".")[0])
+        if p != self.lastplayed[cli]:
+            self.lastplayed[cli] = p
+            pickle.dump(self.lastplayed, file(self.lastplayedfile, 'wb'))
 
     # Uses movie path to get image and resize it and insert
     # into blank image contrainer we created earlier
@@ -279,16 +237,16 @@ class dbusControl(wx.Frame):
 
     def volUp(self, event):
         if self.cli['user'] == "james":
-            cmd = '$HOME/bin/vlcdbus vlc volume $(echo "scale=3; \
-                $($HOME/bin/vlcdbus vlc volume)"+.1 | bc)'
+            cmd = '/home/james/bin/vlcdbus vlc volume $(echo "scale=3; \
+                $(/home/james/bin/vlcdbus vlc volume)"+.1 | bc)'
         else:
             cmd = '$HOME/bin/dbuscontrol volumeup'
         ThreadedFunction(self.sendcmd, self.cli, cmd)
 
     def volDown(self, event):
         if self.cli['user'] == "james":
-            cmd = '$HOME/bin/vlcdbus vlc volume $(echo "scale=3; \
-                    $($HOME/bin/vlcdbus vlc volume)"-.1 | bc)'
+            cmd = '/home/james/bin/vlcdbus vlc volume $(echo "scale=3; \
+                    $(/home/james/bin/vlcdbus vlc volume)"-.1 | bc)'
         else:
             cmd = '$HOME/bin/dbuscontrol volumedown'
         ThreadedFunction(self.sendcmd, self.cli, cmd)
@@ -296,20 +254,21 @@ class dbusControl(wx.Frame):
     def pause(self, event):
         if self.cli['user'] == "james":
             if self.playpause == 0:
-                cmd = '$HOME/bin/vlcdbus vlc pause'
+                cmd = '/home/james/bin/vlcdbus vlc pause'
                 self.playpause += 1
-                self.timer.Cancel()
+                self.timer.Stop()
             elif self.playpause == 1:
-                cmd = '$HOME/bin/vlcdbus vlc play'
+                cmd = '/home/james/bin/vlcdbus vlc play'
                 self.playpause -= 1
                 self.timer.Start(1000)
         else:
             cmd = '$HOME/bin/dbuscontrol pause'
+        print(cmd)
         ThreadedFunction(self.sendcmd, self.cli, cmd)
 
     def stopMovie(self, event):
         if self.cli['user'] == 'james':
-            cmd = "$HOME/bin/vlcdbus vlc quit"
+            cmd = "/home/james/bin/vlcdbus vlc quit"
         else:
             cmd = '$HOME/bin/killmovie'
         ThreadedFunction(self.sendcmd, self.cli, cmd)
@@ -318,11 +277,13 @@ class dbusControl(wx.Frame):
         if self.cli['user'] == "james":
             pass
         else:
-            cmd = '$HOME/bin/dbuscontrol seek 120'
+            cmd = '$HOME/bin/dbuscontrol seek 1500'
             ThreadedFunction(self.sendcmd, self.cli, cmd)
 
     # Send command via ssh and return output, if any
     def sendcmd(self, cli, cmd):
+        if self.cli['user'] == 'james':
+            Popen(cmd, shell=True)
         client = paramiko.client.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(cli['host'], port=cli['port'],
