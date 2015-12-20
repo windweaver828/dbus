@@ -9,7 +9,7 @@ import wx
 import datetime
 from subprocess import Popen, PIPE, STDOUT
 
-PICKLEFILE = os.path.expanduser('~/.clients.p')
+PICKLEFILE = os.path.expanduser('~/.config/pyxbmc/remotes.p')
 CLIENTS = pickle.load(file(PICKLEFILE, 'rb'))
 
 setPos = '$HOME/bin/dbuscontrol setposition'
